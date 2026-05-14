@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ACR WASM Test</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: sans-serif; background: #525659; color: #eee; min-height: 100vh; display: flex; flex-direction: column; }
+#header { background: #23262a; padding: 10px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid #111; }
+#header h1 { font-size: 15px; color: #7ec8e3; white-space: nowrap; }
+#check-panel { background: #2e3136; border-bottom: 1px solid #111; padding: 10px 16px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+.check-item { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.check-ok   .check-icon::before { content: "✅"; }
+.check-warn .check-icon::before { content: "⚠️"; }
+.check-ng   .check-icon::before { content: "❌"; }
+.check-wait .check-icon::before { content: "⏳"; }
+.check-label { color: #ccc; }
+#file-area { background: #2e3136; border-bottom: 1px solid #111; padding: 8px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.file-group { display: flex; align-items: center; gap: 6px; }
+.file-group label { font-size: 12px; color: #aaa; white-space: nowrap; }
+.file-group input[type="file"] { font-size: 12px; color: #eee; background: #3a3d40; border: 1px solid #555; border-radius: 4px; padding: 3px 6px; cursor: pointer; max-width: 190px; }
+.btn { padding: 5px 14px; border-radius: 4px; border: none; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: #2c6fad; color: #fff; }
+.btn-sample  { background: #27ae60; color: #fff; }
+.btn-clear   { background: #c0392b; color: #fff; }
+#lang-bar { margin-left: auto; display: flex; gap: 4px; }
+.lang-btn { padding: 3px 10px; border-radius: 3px; border: 1px solid #555; background: #3a3d40; color: #ccc; font-size: 12px; cursor: pointer; }
+.lang-btn.active { background: #2c6fad; color: #fff; border-color: #2c6fad; }
+#toolbar { background: #3a3d40; padding: 6px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #111; }
+.nav-btn { padding: 3px 10px; background: #444; color: #eee; border: 1px solid #555; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.nav-btn:hover:not(:disabled) { background: #555; }
+.nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+#page-info { color: #ccc; font-size: 13px; min-width: 70px; text-align: center; }
+#status { font-size: 12px; color: #aaa; margin-left: 4px; }
+#status.ok { color: #27ae60; }
+#status.error { color: #e74c3c; }
+#preview-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+#preview-area img { background: white; box-shadow: 0 4px 16px #0008; max-width: 100%; display: block; }
+#install-guide { display: none; background: #2e3136; border-radius: 8px; padding: 24px; max-width: 680px; width: 100%; margin: 20px auto; }
+#install-guide h2 { color: #7ec8e3; margin-bottom: 14px; font-size: 18px; }
+#install-guide h3 { color: #aaa; font-size: 13px; margin: 14px 0 6px; }
+#install-guide ol { padding-left: 20px; line-height: 2.2; font-size: 13px; color: #ccc; }
+#install-guide p  { font-size: 13px; color: #ccc; margin: 6px 0; }
+#install-guide a  { color: #7ec8e3; }
+.ext-id { background: #23262a; padding: 6px 12px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #7ec8e3; margin: 6px 0; word-break: break-all; }
+#footer { background: #23262a; padding: 6px 16px; font-size: 11px; color: #555; text-align: center; border-top: 1px solid #111; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>ACR WASM Test</h1>
+  <div id="lang-bar">
+    <button class="lang-btn active" onclick="setLang('ja')">日本語</button>
+    <button class="lang-btn" onclick="setLang('en')">English</button>
+    <button class="lang-btn" onclick="setLang('fr')">Francais</button>
+  </div>
+</div>
+<div id="check-panel">
+  <div class="check-item check-wait" id="chk-ext"><span class="check-icon"></span><span class="check-label" id="lbl-chk-ext">確認中...</span></div>
+  <div class="check-item check-wait" id="chk-lic"><span class="check-icon"></span><span class="check-label" id="lbl-chk-lic">確認中...</span></div>
+  <div class="check-item check-wait" id="chk-wasm"><span class="check-icon"></span><span class="check-label" id="lbl-chk-wasm">確認中...</span></div>
+  <button class="btn btn-primary" id="btn-install" onclick="toggleInstall()" style="margin-left:auto;display:none"><span id="lbl-install-btn">インストール方法</span></button>
+</div>
+<div id="file-area">
+  <div class="file-group">
+    <label id="lbl-template">テンプレート:</label>
+    <input type="file" id="file-template" accept=".json" style="display:none" onchange="uploadFile('template',this)">
+    <button class="btn btn-primary" id="btn-template-file" onclick="document.getElementById('file-template').click()">ファイルを選択</button>
+    <span id="lbl-template-name" style="font-size:12px;color:#aaa;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+  </div>
+  <div class="file-group">
+    <label id="lbl-data">データ:</label>
+    <input type="file" id="file-data" accept=".json" style="display:none" onchange="uploadFile('data',this)">
+    <button class="btn btn-primary" id="btn-data-file" onclick="document.getElementById('file-data').click()">ファイルを選択</button>
+    <span id="lbl-data-name" style="font-size:12px;color:#aaa;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+  </div>
+  <button class="btn btn-sample" id="btn-sample" onclick="loadSample()">Sample</button>
+  <button class="btn btn-primary" id="btn-render" onclick="renderAll()" disabled>Render</button>
+  <button class="btn btn-clear" id="btn-clear" onclick="clearAll()">Clear</button>
+</div>
+<div id="toolbar">
+  <button class="nav-btn" id="btn-first" onclick="goPage(0)" disabled>|&lt;</button>
+  <button class="nav-btn" id="btn-prev" onclick="goPage(currentPage-1)" disabled>&lt;</button>
+  <span id="page-info">- / -</span>
+  <button class="nav-btn" id="btn-next" onclick="goPage(currentPage+1)" disabled>&gt;</button>
+  <button class="nav-btn" id="btn-last" onclick="goPage(totalPages-1)" disabled>&gt;|</button>
+  <span id="status"></span>
+</div>
+<div id="install-guide">
+  <h2 id="ig-title">Chrome拡張のインストール方法</h2>
+  <h3 id="ig-s1">ステップ1: 拡張フォルダを準備</h3>
+  <ol id="ig-s1-list"></ol>
+  <h3 id="ig-s2">ステップ2: Chromeに読み込む</h3>
+  <ol id="ig-s2-list"></ol>
+  <h3 id="ig-s3">ステップ3: ライセンス登録</h3>
+  <ol id="ig-s3-list"></ol>
+  <p><a href="https://licensvr.acrossreport.com" target="_blank">https://licensvr.acrossreport.com</a></p>
+  <h3 id="ig-extid">拡張機能ID</h3>
+  <div class="ext-id">gpblhkjoabpdpdjbfkpinlgjdniiidch</div>
+</div>
+<div id="preview-area">
+  <p id="hint-text" style="color:#666;font-size:14px;margin-top:60px;"></p>
+</div>
+<div id="footer">(c) 2026 Across Systems Corporation - ACR WASM Test</div>
+<script>
+const EXT_ID = 'gpblhkjoabpdpdjbfkpinlgjdniiidch';
+let templateReady=false, dataReady=false, currentPage=0, totalPages=0, rendering=false;
+let extOk=false, licOk=false, wasmOk=false;
+const I18N = {
+  ja: {
+    'lbl-template':'テンプレート:','lbl-data':'データ:','lbl-install-btn':'インストール方法',
+    'btn-template-file':'ファイルを選択','btn-data-file':'ファイルを選択',
+    'hint-text':'サンプルを読み込むかファイルをアップロードしてください',
+    'ig-title':'Chrome拡張のインストール方法','ig-s1':'ステップ1: 拡張フォルダを準備','ig-s2':'ステップ2: Chromeに読み込む','ig-s3':'ステップ3: ライセンス登録','ig-extid':'拡張機能ID',
+    'chk-ext-wait':'拡張機能を確認中...','chk-ext-ok':'Chrome拡張: インストール済み','chk-ext-ng':'Chrome拡張: 未インストール',
+    'chk-lic-wait':'ライセンスを確認中...','chk-lic-ok':'ライセンス: 登録済み','chk-lic-ng':'ライセンス: 未登録',
+    'chk-wasm-wait':'WASMを確認中...','chk-wasm-ok':'WASM: 動作OK','chk-wasm-ng':'WASM: 準備中',
+    's-ready':'準備完了','s-loading':'読み込み中...','s-rendering':'レンダリング中...','s-ok':'OK','s-upload-ok':'アップロード完了',
+    'ig-s1-list':['ZIPファイルを展開します','extension/フォルダを保存します'],
+    'ig-s2-list':['chrome://extensions/ を開きます','デベロッパーモードをONにします','パッケージ化されていない拡張機能を読み込むをクリック','extension/フォルダを選択します'],
+    'ig-s3-list':['ライセンスサーバにアクセスします','ACR WASMセクションのGoogleで登録をクリック','認証するとライセンスが自動保存されます'],
+  },
+  en: {
+    'lbl-template':'Template:','lbl-data':'Data:','lbl-install-btn':'How to Install',
+    'btn-template-file':'Choose File','btn-data-file':'Choose File',
+    'hint-text':'Load a sample or upload your files',
+    'ig-title':'How to Install Chrome Extension','ig-s1':'Step 1: Prepare extension folder','ig-s2':'Step 2: Load into Chrome','ig-s3':'Step 3: License Registration','ig-extid':'Extension ID',
+    'chk-ext-wait':'Checking extension...','chk-ext-ok':'Chrome Extension: Installed','chk-ext-ng':'Chrome Extension: Not installed',
+    'chk-lic-wait':'Checking license...','chk-lic-ok':'License: Registered','chk-lic-ng':'License: Not registered',
+    'chk-wasm-wait':'Checking WASM...','chk-wasm-ok':'WASM: Ready','chk-wasm-ng':'WASM: Initializing',
+    's-ready':'Ready','s-loading':'Loading...','s-rendering':'Rendering...','s-ok':'OK','s-upload-ok':'Upload complete',
+    'ig-s1-list':['Extract the ZIP file','Save extension/ folder'],
+    'ig-s2-list':['Open chrome://extensions/','Turn on Developer mode','Click Load unpacked','Select extension/ folder'],
+    'ig-s3-list':['Access the license server','Click Sign up with Google in ACR WASM section','License is saved automatically after auth'],
+  },
+  fr: {
+    'lbl-template':'Modele:','lbl-data':'Donnees:','lbl-install-btn':"Guide d'installation",
+    'btn-template-file':'Choisir un fichier','btn-data-file':'Choisir un fichier',
+    'hint-text':'Chargez un exemple ou telechargez vos fichiers',
+    'ig-title':"Comment installer l'extension Chrome",'ig-s1':"Etape 1: Preparer le dossier",'ig-s2':'Etape 2: Charger dans Chrome','ig-s3':'Etape 3: Enregistrement licence','ig-extid':"ID de l'extension",
+    'chk-ext-wait':"Verification extension...",'chk-ext-ok':'Extension Chrome: Installee','chk-ext-ng':'Extension Chrome: Non installee',
+    'chk-lic-wait':'Verification licence...','chk-lic-ok':'Licence: Enregistree','chk-lic-ng':'Licence: Non enregistree',
+    'chk-wasm-wait':'Verification WASM...','chk-wasm-ok':'WASM: Pret','chk-wasm-ng':'WASM: Initialisation',
+    's-ready':'Pret','s-loading':'Chargement...','s-rendering':'Rendu en cours...','s-ok':'OK','s-upload-ok':'Telechargement reussi',
+    'ig-s1-list':['Extraire le fichier ZIP','Enregistrer le dossier extension/'],
+    'ig-s2-list':['Ouvrir chrome://extensions/','Activer le Mode developpeur','Cliquer Charger extension non empaquetee','Selectionner le dossier extension/'],
+    'ig-s3-list':['Acceder au serveur de licences','Cliquer S inscrire avec Google','La licence est sauvegardee automatiquement'],
+  },
+};
+let currentLang='ja';
+function setLang(lang) {
+  currentLang=lang;
+  const d=I18N[lang];
+  ['lbl-template','lbl-data','lbl-install-btn','hint-text','ig-title','ig-s1','ig-s2','ig-s3','ig-extid','btn-template-file','btn-data-file'].forEach(id=>{
+    const el=document.getElementById(id); if(el&&d[id]!==undefined) el.textContent=d[id];
+  });
+  ['ig-s1-list','ig-s2-list','ig-s3-list'].forEach(id=>{
+    const el=document.getElementById(id); if(el&&d[id]) el.innerHTML=d[id].map(t=>'<li>'+t+'</li>').join('');
+  });
+  document.querySelectorAll('.lang-btn').forEach((btn,i)=>btn.classList.toggle('active',['ja','en','fr'][i]===lang));
+  document.documentElement.lang=lang;
+  localStorage.setItem('acr-lang',lang);
+  updateCheckLabels();
+  setStatus('ready');
+}
+function updateCheckLabels() {
+  const d=I18N[currentLang];
+  document.getElementById('lbl-chk-ext').textContent  = extOk  ? d['chk-ext-ok']  : d['chk-ext-ng'];
+  document.getElementById('lbl-chk-lic').textContent  = licOk  ? d['chk-lic-ok']  : d['chk-lic-ng'];
+  document.getElementById('lbl-chk-wasm').textContent = wasmOk ? d['chk-wasm-ok'] : d['chk-wasm-ng'];
+}
+async function runChecks() {
+  const d=I18N[currentLang];
+  setCheck('chk-ext','wait',d['chk-ext-wait']);
+  if(typeof chrome==='undefined'||!chrome.runtime) {
+    setCheck('chk-ext','ng',d['chk-ext-ng']);
+    setCheck('chk-lic','ng',d['chk-lic-ng']);
+    setCheck('chk-wasm','ng',d['chk-wasm-ng']);
+    document.getElementById('btn-install').style.display='inline-block';
+    return;
+  }
+  setCheck('chk-lic','wait',d['chk-lic-wait']);
+  const licResult=await sendToExt({type:'get_license_status'});
+  if(!licResult) {
+    setCheck('chk-ext','ng',d['chk-ext-ng']);
+    setCheck('chk-lic','ng',d['chk-lic-ng']);
+    setCheck('chk-wasm','ng',d['chk-wasm-ng']);
+    document.getElementById('btn-install').style.display='inline-block';
+    showInstall(); return;
+  }
+  setCheck('chk-ext','ok',d['chk-ext-ok']); extOk=true;
+  if(!licResult.registered) {
+    setCheck('chk-lic','ng',d['chk-lic-ng']);
+    setCheck('chk-wasm','ng',d['chk-wasm-ng']);
+    document.getElementById('btn-install').style.display='inline-block';
+    showInstall(); return;
+  }
+  setCheck('chk-lic','ok',d['chk-lic-ok']); licOk=true;
+  setCheck('chk-wasm','wait',d['chk-wasm-wait']);
+  const sampleT=await fetch('/sample/template').then(r=>r.text()).catch(()=>null);
+  const sampleD=await fetch('/sample/data').then(r=>r.text()).catch(()=>null);
+  if(sampleT&&sampleD) {
+    const r=await sendToExt({type:'render_png',template_json:sampleT,data_json:sampleD,page_index:0});
+    if(r&&r.success) { setCheck('chk-wasm','ok',d['chk-wasm-ok']); wasmOk=true; setStatus('ready'); checkRenderReady(); return; }
+  }
+  setCheck('chk-wasm','ng',d['chk-wasm-ng']);
+}
+function setCheck(id,state,label) {
+  document.getElementById(id).className='check-item check-'+state;
+  document.getElementById('lbl-'+id).textContent=label;
+  if(id==='chk-ext') extOk=state==='ok';
+  if(id==='chk-lic') licOk=state==='ok';
+  if(id==='chk-wasm') wasmOk=state==='ok';
+}
+async function uploadFile(type,input) {
+  if(!input.files[0]) return;
+  const nameEl=document.getElementById(type==='template'?'lbl-template-name':'lbl-data-name');
+  if(nameEl) nameEl.textContent=input.files[0].name;
+  const form=new FormData(); form.append(type,input.files[0]);
+  const r=await fetch('/upload',{method:'POST',body:form});
+  const j=await r.json();
+  if(j.ok) { if(type==='template') templateReady=true; if(type==='data') dataReady=true; setStatus('ok',I18N[currentLang]['s-upload-ok']+': '+type); checkRenderReady(); }
+}
+async function loadSample() {
+  setStatus('loading');
+  templateReady=true; dataReady=true;
+  checkRenderReady(); renderAll();
+}
+function checkRenderReady() { document.getElementById('btn-render').disabled=!(templateReady&&dataReady&&extOk&&licOk); }
+async function clearAll() {
+  await fetch('/clear', { method: 'POST' });
+  templateReady = false; dataReady = false;
+  document.getElementById('file-template').value = '';
+  document.getElementById('file-data').value = '';
+  document.getElementById('lbl-template-name').textContent = '';
+  document.getElementById('lbl-data-name').textContent = '';
+  totalPages = 0; currentPage = 0; updateNav();
+  checkRenderReady();
+  setStatus('ready');
+  const area = document.getElementById('preview-area');
+  area.innerHTML = '<p id="hint-text" style="color:#666;font-size:14px;margin-top:60px;">'+I18N[currentLang]['hint-text']+'</p>';
+}
+async function renderAll() {
+  if(rendering||!templateReady||!dataReady) return;
+  rendering=true; setStatus('rendering');
+  const tUrl=templateReady?'/uploaded/template':'/sample/template';
+  const dUrl=dataReady?'/uploaded/data':'/sample/data';
+  // アップロード済みを優先、なければサンプル
+  const tu=await fetch('/uploaded/template').catch(()=>null);
+  const du=await fetch('/uploaded/data').catch(()=>null);
+  let t = (tu&&tu.ok) ? await tu.text() : await fetch('/sample/template').then(r=>r.text());
+  let d = (du&&du.ok) ? await du.text() : await fetch('/sample/data').then(r=>r.text());
+  const first=await sendToExt({type:'render_png',template_json:t,data_json:d,page_index:0});
+  if(!first){rendering=false;return;}
+  totalPages=first.page_count; currentPage=0; updateNav();
+  document.getElementById('install-guide').style.display='none';
+  document.getElementById('preview-area').style.display='flex';
+  const area=document.getElementById('preview-area'); area.innerHTML='';
+  for(let i=0;i<totalPages;i++) {
+    const r=i===0?first:await sendToExt({type:'render_png',template_json:t,data_json:d,page_index:i});
+    if(!r) break;
+    const img=document.createElement('img'); img.src='data:image/png;base64,'+r.png_base64; area.appendChild(img);
+  }
+  setStatus('ok',totalPages+'p'); rendering=false;
+}
+function goPage(idx) {
+  if(idx<0||idx>=totalPages) return; currentPage=idx; updateNav();
+  const imgs=document.querySelectorAll('#preview-area img'); if(imgs[idx]) imgs[idx].scrollIntoView({behavior:'smooth',block:'start'});
+}
+function updateNav() {
+  document.getElementById('page-info').textContent=totalPages>0?(currentPage+1)+' / '+totalPages:'- / -';
+  document.getElementById('btn-first').disabled=currentPage<=0;
+  document.getElementById('btn-prev').disabled=currentPage<=0;
+  document.getElementById('btn-next').disabled=currentPage>=totalPages-1;
+  document.getElementById('btn-last').disabled=currentPage>=totalPages-1;
+}
+function toggleInstall() {
+  const g=document.getElementById('install-guide'); const p=document.getElementById('preview-area');
+  const show=g.style.display!=='block'; g.style.display=show?'block':'none'; p.style.display=show?'none':'flex';
+}
+function showInstall() { document.getElementById('install-guide').style.display='block'; document.getElementById('preview-area').style.display='none'; }
+function sendToExt(msg) {
+  return new Promise(resolve=>{
+    if(typeof chrome==='undefined'||!chrome.runtime){resolve(null);return;}
+    chrome.runtime.sendMessage(EXT_ID,msg,r=>{
+      if(chrome.runtime.lastError||!r){resolve(null);return;}
+      // get_license_statusはsuccessフィールドなし
+      if(msg.type==='get_license_status') { resolve(r); return; }
+      resolve(r.success?r:null);
+    });
+  });
+}
+function setStatus(type,msg) {
+  const el=document.getElementById('status'); const d=I18N[currentLang]; el.className='';
+  if(type==='loading') el.textContent=d['s-loading'];
+  else if(type==='rendering') el.textContent=d['s-rendering'];
+  else if(type==='ok'){el.textContent=(msg?msg+' ':'')+d['s-ok'];el.className='ok';}
+  else if(type==='error'){el.textContent=msg||'Error';el.className='error';}
+  else el.textContent=d['s-ready'];
+}
+(function(){
+  const lang=localStorage.getItem('acr-lang')||'ja'; setLang(lang);
+  // Service Workerが起動するまで最大5回リトライ
+  let retry = 0;
+  async function tryCheck() {
+    await runChecks();
+    if (!extOk && retry < 5) {
+      retry++;
+      setTimeout(tryCheck, 1500);
+    }
+  }
+  tryCheck();
+})();
+</script>
+</body>
+</html>
